@@ -13,6 +13,7 @@
 #include "auxiliary.h"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <cstdint>
 namespace cg = cooperative_groups;
 
 // Forward method for converting the input spherical harmonics
@@ -285,7 +286,8 @@ renderCUDA(
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
 	const float* __restrict__ depths,
-	float* __restrict__ invdepth)
+	float* __restrict__ invdepth,
+	const uint8_t* __restrict__ tile_mask)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -300,6 +302,24 @@ renderCUDA(
 	bool inside = pix.x < W&& pix.y < H;
 	// Done threads can help with fetching, but don't rasterize
 	bool done = !inside;
+
+	if (tile_mask)
+	{
+		const uint32_t tile_id = block.group_index().y * horizontal_blocks + block.group_index().x;
+		if (tile_mask[tile_id] == 0)
+		{
+			if (inside)
+			{
+				final_T[pix_id] = 1.0f;
+				n_contrib[pix_id] = 0;
+				for (int ch = 0; ch < CHANNELS; ch++)
+					out_color[ch * H * W + pix_id] = bg_color[ch];
+				if (invdepth)
+					invdepth[pix_id] = 0.0f;
+			}
+			return;
+		}
+	}
 
 	// Load start/end range of IDs to process in bit sorted list.
 	uint2 range = ranges[block.group_index().y * horizontal_blocks + block.group_index().x];
@@ -409,7 +429,8 @@ void FORWARD::render(
 	const float* bg_color,
 	float* out_color,
 	float* depths,
-	float* depth)
+	float* depth,
+	const uint8_t* tile_mask)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -423,7 +444,8 @@ void FORWARD::render(
 		bg_color,
 		out_color,
 		depths, 
-		depth);
+		depth,
+		tile_mask);
 }
 
 void FORWARD::preprocess(int P, int D, int M,

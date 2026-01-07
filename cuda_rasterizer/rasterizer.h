@@ -14,6 +14,7 @@
 
 #include <vector>
 #include <functional>
+#include <cstdint>
 
 namespace CudaRasterizer
 {
@@ -48,6 +49,7 @@ namespace CudaRasterizer
 			const float* cam_pos,
 			const float tan_fovx, float tan_fovy,
 			const bool prefiltered,
+			const uint8_t* tile_mask,
 			float* out_color,
 			float* depth,
 			bool antialiasing,
@@ -70,6 +72,7 @@ namespace CudaRasterizer
 			const float* projmatrix,
 			const float* campos,
 			const float tan_fovx, float tan_fovy,
+			const uint8_t* tile_mask,
 			const int* radii,
 			char* geom_buffer,
 			char* binning_buffer,

@@ -17,6 +17,7 @@
 #include "device_launch_parameters.h"
 #define GLM_FORCE_CUDA
 #include <glm/glm.hpp>
+#include <cstdint>
 
 namespace FORWARD
 {
@@ -62,7 +63,8 @@ namespace FORWARD
 		const float* bg_color,
 		float* out_color,
 		float* depths,
-		float* depth);
+		float* depth,
+		const uint8_t* tile_mask);
 }
 
 

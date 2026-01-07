@@ -17,6 +17,7 @@
 #include "device_launch_parameters.h"
 #define GLM_FORCE_CUDA
 #include <glm/glm.hpp>
+#include <cstdint>
 
 namespace BACKWARD
 {
@@ -38,7 +39,8 @@ namespace BACKWARD
 		float4* dL_dconic2D,
 		float* dL_dopacity,
 		float* dL_dcolors,
-		float* dL_dinvdepths);
+		float* dL_dinvdepths,
+		const uint8_t* tile_mask);
 
 	void preprocess(
 		int P, int D, int M,

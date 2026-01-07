@@ -215,6 +215,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float* cam_pos,
 	const float tan_fovx, float tan_fovy,
 	const bool prefiltered,
+	const uint8_t* tile_mask,
 	float* out_color,
 	float* depth,
 	bool antialiasing,
@@ -335,7 +336,8 @@ int CudaRasterizer::Rasterizer::forward(
 		background,
 		out_color,
 		geomState.depths,
-		depth), debug)
+		depth,
+		tile_mask), debug)
 
 	return num_rendered;
 }
@@ -358,6 +360,7 @@ void CudaRasterizer::Rasterizer::backward(
 	const float* projmatrix,
 	const float* campos,
 	const float tan_fovx, float tan_fovy,
+	const uint8_t* tile_mask,
 	const int* radii,
 	char* geom_buffer,
 	char* binning_buffer,
@@ -415,7 +418,8 @@ void CudaRasterizer::Rasterizer::backward(
 		(float4*)dL_dconic,
 		dL_dopacity,
 		dL_dcolor,
-		dL_dinvdepth), debug);
+		dL_dinvdepth,
+		tile_mask), debug);
 
 	// Take care of the rest of preprocessing. Was the precomputed covariance
 	// given to us or a scales/rot pair? If precomputed, pass that. If not,

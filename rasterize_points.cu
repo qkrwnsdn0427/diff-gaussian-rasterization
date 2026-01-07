@@ -16,6 +16,7 @@
 #include <iostream>
 #include <tuple>
 #include <stdio.h>
+#include <cstdint>
 #include <cuda_runtime_api.h>
 #include <memory>
 #include "cuda_rasterizer/config.h"
@@ -53,7 +54,8 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& campos,
 	const bool prefiltered,
 	const bool antialiasing,
-	const bool debug)
+	const bool debug,
+	const torch::Tensor& tile_mask)
 {
   if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
     AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -62,6 +64,8 @@ RasterizeGaussiansCUDA(
   const int P = means3D.size(0);
   const int H = image_height;
   const int W = image_width;
+  const int tile_h = (H + BLOCK_Y - 1) / BLOCK_Y;
+  const int tile_w = (W + BLOCK_X - 1) / BLOCK_X;
 
   auto int_opts = means3D.options().dtype(torch::kInt32);
   auto float_opts = means3D.options().dtype(torch::kFloat32);
@@ -93,6 +97,18 @@ RasterizeGaussiansCUDA(
 		M = sh.size(1);
       }
 
+	  const uint8_t* tile_mask_ptr = nullptr;
+	  if (tile_mask.numel() > 0)
+	  {
+		  if (!tile_mask.is_cuda())
+			  AT_ERROR("tile_mask must be a CUDA tensor");
+		  if (tile_mask.dim() != 2 || tile_mask.size(0) != tile_h || tile_mask.size(1) != tile_w)
+			  AT_ERROR("tile_mask must have shape (ceil(H/BLOCK_Y), ceil(W/BLOCK_X))");
+		  if (tile_mask.scalar_type() != at::kByte && tile_mask.scalar_type() != at::kBool)
+			  AT_ERROR("tile_mask must have dtype uint8 or bool");
+		  tile_mask_ptr = tile_mask.contiguous().data_ptr<uint8_t>();
+	  }
+
 	  rendered = CudaRasterizer::Rasterizer::forward(
 	    geomFunc,
 		binningFunc,
@@ -114,6 +130,7 @@ RasterizeGaussiansCUDA(
 		tan_fovx,
 		tan_fovy,
 		prefiltered,
+		tile_mask_ptr,
 		out_color.contiguous().data<float>(),
 		out_invdepthptr,
 		antialiasing,
@@ -148,11 +165,14 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& binningBuffer,
 	const torch::Tensor& imageBuffer,
 	const bool antialiasing,
-	const bool debug)
+	const bool debug,
+	const torch::Tensor& tile_mask)
 {
   const int P = means3D.size(0);
   const int H = dL_dout_color.size(1);
   const int W = dL_dout_color.size(2);
+  const int tile_h = (H + BLOCK_Y - 1) / BLOCK_Y;
+  const int tile_w = (W + BLOCK_X - 1) / BLOCK_X;
   
   int M = 0;
   if(sh.size(0) != 0)
@@ -183,6 +203,18 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 
   if(P != 0)
   {  
+	  const uint8_t* tile_mask_ptr = nullptr;
+	  if (tile_mask.numel() > 0)
+	  {
+		  if (!tile_mask.is_cuda())
+			  AT_ERROR("tile_mask must be a CUDA tensor");
+		  if (tile_mask.dim() != 2 || tile_mask.size(0) != tile_h || tile_mask.size(1) != tile_w)
+			  AT_ERROR("tile_mask must have shape (ceil(H/BLOCK_Y), ceil(W/BLOCK_X))");
+		  if (tile_mask.scalar_type() != at::kByte && tile_mask.scalar_type() != at::kBool)
+			  AT_ERROR("tile_mask must have dtype uint8 or bool");
+		  tile_mask_ptr = tile_mask.contiguous().data_ptr<uint8_t>();
+	  }
+
 	  CudaRasterizer::Rasterizer::backward(P, degree, M, R,
 	  background.contiguous().data<float>(),
 	  W, H, 
@@ -199,6 +231,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  campos.contiguous().data<float>(),
 	  tan_fovx,
 	  tan_fovy,
+	  tile_mask_ptr,
 	  radii.contiguous().data<int>(),
 	  reinterpret_cast<char*>(geomBuffer.contiguous().data_ptr()),
 	  reinterpret_cast<char*>(binningBuffer.contiguous().data_ptr()),

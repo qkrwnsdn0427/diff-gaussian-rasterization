@@ -13,6 +13,7 @@
 #include "auxiliary.h"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <cstdint>
 namespace cg = cooperative_groups;
 
 __device__ __forceinline__ float sq(float x) { return x * x; }
@@ -468,7 +469,8 @@ renderCUDA(
 	float4* __restrict__ dL_dconic2D,
 	float* __restrict__ dL_dopacity,
 	float* __restrict__ dL_dcolors,
-	float* __restrict__ dL_dinvdepths
+	float* __restrict__ dL_dinvdepths,
+	const uint8_t* __restrict__ tile_mask
 )
 {
 	// We rasterize again. Compute necessary block info.
@@ -487,6 +489,13 @@ renderCUDA(
 
 	bool done = !inside;
 	int toDo = range.y - range.x;
+
+	if (tile_mask)
+	{
+		const uint32_t tile_id = block.group_index().y * horizontal_blocks + block.group_index().x;
+		if (tile_mask[tile_id] == 0)
+			return;
+	}
 
 	__shared__ int collected_id[BLOCK_SIZE];
 	__shared__ float2 collected_xy[BLOCK_SIZE];
@@ -729,7 +738,8 @@ void BACKWARD::render(
 	float4* dL_dconic2D,
 	float* dL_dopacity,
 	float* dL_dcolors,
-	float* dL_dinvdepths)
+	float* dL_dinvdepths,
+	const uint8_t* tile_mask)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
 		ranges,
@@ -748,6 +758,7 @@ void BACKWARD::render(
 		dL_dconic2D,
 		dL_dopacity,
 		dL_dcolors,
-		dL_dinvdepths
+		dL_dinvdepths,
+		tile_mask
 		);
 }
