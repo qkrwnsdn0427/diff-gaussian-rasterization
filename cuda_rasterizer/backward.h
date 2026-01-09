@@ -46,6 +46,7 @@ namespace BACKWARD
 		int P, int D, int M,
 		const float3* means,
 		const int* radii,
+		const uint8_t* gaussian_mask,
 		const float* shs,
 		const bool* clamped,
 		const float* opacities,

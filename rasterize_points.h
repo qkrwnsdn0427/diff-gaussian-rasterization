@@ -65,7 +65,24 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& imageBuffer,
 	const bool antialiasing,
 	const bool debug,
-	const torch::Tensor& tile_mask);
+	const torch::Tensor& tile_mask,
+	const torch::Tensor& gaussian_mask);
+
+torch::Tensor ComputeTileMaskCUDA(
+	const torch::Tensor& means3D,
+	const torch::Tensor& scales,
+	const torch::Tensor& rotations,
+	const torch::Tensor& viewmatrix,
+	const torch::Tensor& projmatrix,
+	const float tan_fovx,
+	const float tan_fovy,
+	const int image_height,
+	const int image_width,
+	const float scale_modifier,
+	const torch::Tensor& gaussian_mask,
+	const int tile_size,
+	const int pad_tiles,
+	const int mode);
 		
 torch::Tensor markVisible(
 		torch::Tensor& means3D,

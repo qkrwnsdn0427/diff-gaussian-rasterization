@@ -73,6 +73,7 @@ namespace CudaRasterizer
 			const float* campos,
 			const float tan_fovx, float tan_fovy,
 			const uint8_t* tile_mask,
+			const uint8_t* gaussian_mask,
 			const int* radii,
 			char* geom_buffer,
 			char* binning_buffer,

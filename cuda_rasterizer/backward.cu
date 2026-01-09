@@ -148,6 +148,7 @@ __device__ void computeColorFromSH(int idx, int deg, int max_coeffs, const glm::
 __global__ void computeCov2DCUDA(int P,
 	const float3* means,
 	const int* radii,
+	const uint8_t* gaussian_mask,
 	const float* cov3Ds,
 	const float h_x, float h_y,
 	const float tan_fovx, float tan_fovy,
@@ -161,7 +162,7 @@ __global__ void computeCov2DCUDA(int P,
 	bool antialiasing)
 {
 	auto idx = cg::this_grid().thread_rank();
-	if (idx >= P || !(radii[idx] > 0))
+	if (idx >= P || (gaussian_mask && gaussian_mask[idx] == 0) || !(radii[idx] > 0))
 		return;
 
 	// Reading location of 3D covariance for this Gaussian
@@ -401,6 +402,7 @@ __global__ void preprocessCUDA(
 	int P, int D, int M,
 	const float3* means,
 	const int* radii,
+	const uint8_t* gaussian_mask,
 	const float* shs,
 	const bool* clamped,
 	const glm::vec3* scales,
@@ -418,7 +420,7 @@ __global__ void preprocessCUDA(
 	float* dL_dopacity)
 {
 	auto idx = cg::this_grid().thread_rank();
-	if (idx >= P || !(radii[idx] > 0))
+	if (idx >= P || (gaussian_mask && gaussian_mask[idx] == 0) || !(radii[idx] > 0))
 		return;
 
 	float3 m = means[idx];
@@ -650,6 +652,7 @@ void BACKWARD::preprocess(
 	int P, int D, int M,
 	const float3* means3D,
 	const int* radii,
+	const uint8_t* gaussian_mask,
 	const float* shs,
 	const bool* clamped,
 	const float* opacities,
@@ -682,6 +685,7 @@ void BACKWARD::preprocess(
 		P,
 		means3D,
 		radii,
+		gaussian_mask,
 		cov3Ds,
 		focal_x,
 		focal_y,
@@ -703,6 +707,7 @@ void BACKWARD::preprocess(
 		P, D, M,
 		(float3*)means3D,
 		radii,
+		gaussian_mask,
 		shs,
 		clamped,
 		(glm::vec3*)scales,

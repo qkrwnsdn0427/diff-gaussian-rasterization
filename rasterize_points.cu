@@ -20,6 +20,7 @@
 #include <cuda_runtime_api.h>
 #include <memory>
 #include "cuda_rasterizer/config.h"
+#include "cuda_rasterizer/forward.h"
 #include "cuda_rasterizer/rasterizer.h"
 #include <fstream>
 #include <string>
@@ -166,7 +167,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& imageBuffer,
 	const bool antialiasing,
 	const bool debug,
-	const torch::Tensor& tile_mask)
+	const torch::Tensor& tile_mask,
+	const torch::Tensor& gaussian_mask)
 {
   const int P = means3D.size(0);
   const int H = dL_dout_color.size(1);
@@ -204,6 +206,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
   if(P != 0)
   {  
 	  const uint8_t* tile_mask_ptr = nullptr;
+	  const uint8_t* gaussian_mask_ptr = nullptr;
 	  if (tile_mask.numel() > 0)
 	  {
 		  if (!tile_mask.is_cuda())
@@ -213,6 +216,17 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 		  if (tile_mask.scalar_type() != at::kByte && tile_mask.scalar_type() != at::kBool)
 			  AT_ERROR("tile_mask must have dtype uint8 or bool");
 		  tile_mask_ptr = tile_mask.contiguous().data_ptr<uint8_t>();
+	  }
+
+	  if (gaussian_mask.numel() > 0)
+	  {
+		  if (!gaussian_mask.is_cuda())
+			  AT_ERROR("gaussian_mask must be a CUDA tensor");
+		  if (gaussian_mask.dim() != 1 || gaussian_mask.size(0) != P)
+			  AT_ERROR("gaussian_mask must have shape (P,)");
+		  if (gaussian_mask.scalar_type() != at::kByte && gaussian_mask.scalar_type() != at::kBool)
+			  AT_ERROR("gaussian_mask must have dtype uint8 or bool");
+		  gaussian_mask_ptr = gaussian_mask.contiguous().data_ptr<uint8_t>();
 	  }
 
 	  CudaRasterizer::Rasterizer::backward(P, degree, M, R,
@@ -232,6 +246,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  tan_fovx,
 	  tan_fovy,
 	  tile_mask_ptr,
+	  gaussian_mask_ptr,
 	  radii.contiguous().data<int>(),
 	  reinterpret_cast<char*>(geomBuffer.contiguous().data_ptr()),
 	  reinterpret_cast<char*>(binningBuffer.contiguous().data_ptr()),
@@ -253,6 +268,83 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
   }
 
   return std::make_tuple(dL_dmeans2D, dL_dcolors, dL_dopacity, dL_dmeans3D, dL_dcov3D, dL_dsh, dL_dscales, dL_drotations);
+}
+
+torch::Tensor ComputeTileMaskCUDA(
+	const torch::Tensor& means3D,
+	const torch::Tensor& scales,
+	const torch::Tensor& rotations,
+	const torch::Tensor& viewmatrix,
+	const torch::Tensor& projmatrix,
+	const float tan_fovx,
+	const float tan_fovy,
+	const int image_height,
+	const int image_width,
+	const float scale_modifier,
+	const torch::Tensor& gaussian_mask,
+	const int tile_size,
+	const int pad_tiles,
+	const int mode)
+{
+  if (!means3D.is_cuda())
+	  AT_ERROR("means3D must be a CUDA tensor");
+  if (means3D.ndimension() != 2 || means3D.size(1) != 3)
+	  AT_ERROR("means3D must have dimensions (num_points, 3)");
+  if (!scales.is_cuda() || scales.ndimension() != 2 || scales.size(1) != 3)
+	  AT_ERROR("scales must be a CUDA tensor with shape (num_points, 3)");
+  if (!rotations.is_cuda() || rotations.ndimension() != 2 || rotations.size(1) != 4)
+	  AT_ERROR("rotations must be a CUDA tensor with shape (num_points, 4)");
+  if (!viewmatrix.is_cuda() || viewmatrix.numel() != 16)
+	  AT_ERROR("viewmatrix must be a CUDA tensor with 16 elements");
+  if (!projmatrix.is_cuda() || projmatrix.numel() != 16)
+	  AT_ERROR("projmatrix must be a CUDA tensor with 16 elements");
+  if (tile_size != BLOCK_X || tile_size != BLOCK_Y)
+	  AT_ERROR("tile_size must match BLOCK_X/BLOCK_Y");
+  if (mode != 0 && mode != 1)
+	  AT_ERROR("mode must be 0 (footprint) or 1 (center)");
+
+  const int P = means3D.size(0);
+  const int H = image_height;
+  const int W = image_width;
+  const int tile_h = (H + BLOCK_Y - 1) / BLOCK_Y;
+  const int tile_w = (W + BLOCK_X - 1) / BLOCK_X;
+
+  auto int_opts = means3D.options().dtype(torch::kInt32);
+  torch::Tensor tile_mask = torch::zeros({tile_h, tile_w}, int_opts);
+
+  const uint8_t* gaussian_mask_ptr = nullptr;
+  if (gaussian_mask.numel() > 0)
+  {
+	  if (!gaussian_mask.is_cuda())
+		  AT_ERROR("gaussian_mask must be a CUDA tensor");
+	  if (gaussian_mask.dim() != 1 || gaussian_mask.size(0) != P)
+		  AT_ERROR("gaussian_mask must have shape (P,)");
+	  if (gaussian_mask.scalar_type() != at::kByte && gaussian_mask.scalar_type() != at::kBool)
+		  AT_ERROR("gaussian_mask must have dtype uint8 or bool");
+	  gaussian_mask_ptr = gaussian_mask.contiguous().data_ptr<uint8_t>();
+  }
+
+  if (P != 0)
+  {
+	  FORWARD::computeTileMask(
+		  P,
+		  means3D.contiguous().data<float>(),
+		  (glm::vec3*)scales.contiguous().data_ptr<float>(),
+		  scale_modifier,
+		  (glm::vec4*)rotations.contiguous().data_ptr<float>(),
+		  viewmatrix.contiguous().data<float>(),
+		  projmatrix.contiguous().data<float>(),
+		  tan_fovx,
+		  tan_fovy,
+		  W,
+		  H,
+		  gaussian_mask_ptr,
+		  pad_tiles,
+		  mode,
+		  tile_mask.contiguous().data<int>());
+  }
+
+  return tile_mask.to(torch::kUInt8);
 }
 
 torch::Tensor markVisible(

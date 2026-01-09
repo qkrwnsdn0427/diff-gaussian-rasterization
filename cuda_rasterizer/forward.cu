@@ -269,6 +269,101 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
 }
 
+__global__ void computeTileMaskCUDA(
+	int P,
+	const float* means3D,
+	const glm::vec3* scales,
+	const float scale_modifier,
+	const glm::vec4* rotations,
+	const float* viewmatrix,
+	const float* projmatrix,
+	const float tan_fovx, const float tan_fovy,
+	const int W, const int H,
+	const uint8_t* gaussian_mask,
+	const int pad_tiles,
+	const int mode,
+	const dim3 grid,
+	int* tile_mask)
+{
+	auto idx = cg::this_grid().thread_rank();
+	if (idx >= P)
+		return;
+	if (gaussian_mask && gaussian_mask[idx] == 0)
+		return;
+
+	float3 p_view;
+	if (!in_frustum(idx, means3D, viewmatrix, projmatrix, false, p_view))
+		return;
+
+	float3 p_orig = { means3D[3 * idx], means3D[3 * idx + 1], means3D[3 * idx + 2] };
+	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
+	float p_w = 1.0f / (p_hom.w + 0.0000001f);
+	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
+
+	const float focal_y = H / (2.0f * tan_fovy);
+	const float focal_x = W / (2.0f * tan_fovx);
+
+	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) };
+	if (point_image.x < 0.0f || point_image.x >= W || point_image.y < 0.0f || point_image.y >= H)
+		return;
+
+	if (mode == 1)
+	{
+		int tile_x = (int)floorf(point_image.x / BLOCK_X);
+		int tile_y = (int)floorf(point_image.y / BLOCK_Y);
+		int min_x = max(0, tile_x - pad_tiles);
+		int max_x = min((int)grid.x, tile_x + pad_tiles + 1);
+		int min_y = max(0, tile_y - pad_tiles);
+		int max_y = min((int)grid.y, tile_y + pad_tiles + 1);
+
+		for (int y = min_y; y < max_y; ++y)
+		{
+			for (int x = min_x; x < max_x; ++x)
+			{
+				atomicExch(tile_mask + y * grid.x + x, 1);
+			}
+		}
+		return;
+	}
+
+	int my_radius = 0;
+	float cov3D[6];
+	computeCov3D(scales[idx], scale_modifier, rotations[idx], cov3D);
+	float3 cov = computeCov2D(p_orig, focal_x, focal_y, tan_fovx, tan_fovy, cov3D, viewmatrix);
+
+	constexpr float h_var = 0.3f;
+	cov.x += h_var;
+	cov.z += h_var;
+	const float det = cov.x * cov.z - cov.y * cov.y;
+	if (det == 0.0f)
+		return;
+	float mid = 0.5f * (cov.x + cov.z);
+	float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
+	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
+	my_radius = (int)ceil(3.f * sqrt(max(lambda1, lambda2)));
+
+	if (my_radius <= 0)
+		return;
+
+	uint2 rect_min, rect_max;
+	getRect(point_image, my_radius, rect_min, rect_max, grid);
+	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
+		return;
+
+	int min_x = max(0, (int)rect_min.x - pad_tiles);
+	int max_x = min((int)grid.x, (int)rect_max.x + pad_tiles);
+	int min_y = max(0, (int)rect_min.y - pad_tiles);
+	int max_y = min((int)grid.y, (int)rect_max.y + pad_tiles);
+
+	for (int y = min_y; y < max_y; ++y)
+	{
+		for (int x = min_x; x < max_x; ++x)
+		{
+			atomicExch(tile_mask + y * grid.x + x, 1);
+		}
+	}
+}
+
 // Main rasterization method. Collaboratively works on one tile per
 // block, each thread treats one pixel. Alternates between fetching 
 // and rasterizing data.
@@ -503,4 +598,39 @@ void FORWARD::preprocess(int P, int D, int M,
 		prefiltered,
 		antialiasing
 		);
+}
+
+void FORWARD::computeTileMask(
+	int P,
+	const float* means3D,
+	const glm::vec3* scales,
+	const float scale_modifier,
+	const glm::vec4* rotations,
+	const float* viewmatrix,
+	const float* projmatrix,
+	const float tan_fovx, const float tan_fovy,
+	const int W, const int H,
+	const uint8_t* gaussian_mask,
+	const int pad_tiles,
+	const int mode,
+	int* tile_mask)
+{
+	const dim3 tile_grid((W + BLOCK_X - 1) / BLOCK_X, (H + BLOCK_Y - 1) / BLOCK_Y, 1);
+	computeTileMaskCUDA << <(P + 255) / 256, 256 >> > (
+		P,
+		means3D,
+		scales,
+		scale_modifier,
+		rotations,
+		viewmatrix,
+		projmatrix,
+		tan_fovx,
+		tan_fovy,
+		W,
+		H,
+		gaussian_mask,
+		pad_tiles,
+		mode,
+		tile_grid,
+		tile_mask);
 }

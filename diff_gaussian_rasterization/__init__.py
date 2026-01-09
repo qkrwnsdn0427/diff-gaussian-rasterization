@@ -28,7 +28,7 @@ def rasterize_gaussians(
     rotations,
     cov3Ds_precomp,
     raster_settings,
-):
+    ):
     return _RasterizeGaussians.apply(
         means3D,
         means2D,
@@ -39,6 +39,50 @@ def rasterize_gaussians(
         rotations,
         cov3Ds_precomp,
         raster_settings,
+    )
+
+def compute_tile_mask(
+    means3D,
+    scales,
+    rotations,
+    viewmatrix,
+    projmatrix,
+    tanfovx,
+    tanfovy,
+    image_height,
+    image_width,
+    scale_modifier=1.0,
+    gaussian_mask=None,
+    tile_size=16,
+    pad_tiles=0,
+    mode="footprint",
+):
+    if gaussian_mask is None:
+        gaussian_mask = torch.empty((0,), device=means3D.device, dtype=torch.uint8)
+    else:
+        gaussian_mask = gaussian_mask.to(device=means3D.device, dtype=torch.uint8)
+    if isinstance(mode, str):
+        if mode == "footprint":
+            mode = 0
+        elif mode == "center":
+            mode = 1
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+    return _C.compute_tile_mask(
+        means3D,
+        scales,
+        rotations,
+        viewmatrix,
+        projmatrix,
+        float(tanfovx),
+        float(tanfovy),
+        int(image_height),
+        int(image_width),
+        float(scale_modifier),
+        gaussian_mask,
+        int(tile_size),
+        int(pad_tiles),
+        int(mode),
     )
 
 class _RasterizeGaussians(torch.autograd.Function):
@@ -123,7 +167,8 @@ class _RasterizeGaussians(torch.autograd.Function):
                 imgBuffer,
                 raster_settings.antialiasing,
                 raster_settings.debug,
-                raster_settings.tile_mask)
+                raster_settings.tile_mask,
+                raster_settings.gaussian_mask)
 
         # Compute gradients for relevant tensors by invoking backward method
         grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args)        
@@ -157,6 +202,7 @@ class GaussianRasterizationSettings(NamedTuple):
     debug : bool
     antialiasing : bool
     tile_mask : torch.Tensor
+    gaussian_mask : torch.Tensor
 
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):

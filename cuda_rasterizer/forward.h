@@ -65,6 +65,21 @@ namespace FORWARD
 		float* depths,
 		float* depth,
 		const uint8_t* tile_mask);
+
+	void computeTileMask(
+		int P,
+		const float* means3D,
+		const glm::vec3* scales,
+		const float scale_modifier,
+		const glm::vec4* rotations,
+		const float* viewmatrix,
+		const float* projmatrix,
+		const float tan_fovx, float tan_fovy,
+		const int W, const int H,
+		const uint8_t* gaussian_mask,
+		const int pad_tiles,
+		const int mode,
+		int* tile_mask);
 }
 
 
