@@ -50,6 +50,7 @@ namespace CudaRasterizer
 			const float tan_fovx, float tan_fovy,
 			const bool prefiltered,
 			const uint8_t* tile_mask,
+			const uint8_t* gaussian_mask,
 			float* out_color,
 			float* depth,
 			bool antialiasing,

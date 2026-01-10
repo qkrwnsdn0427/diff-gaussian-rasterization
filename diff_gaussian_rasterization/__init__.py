@@ -123,6 +123,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.antialiasing,
             raster_settings.debug,
             raster_settings.tile_mask,
+            raster_settings.gaussian_mask,
         )
 
         # Invoke C++/CUDA rasterizer

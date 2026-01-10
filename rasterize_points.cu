@@ -56,7 +56,8 @@ RasterizeGaussiansCUDA(
 	const bool prefiltered,
 	const bool antialiasing,
 	const bool debug,
-	const torch::Tensor& tile_mask)
+	const torch::Tensor& tile_mask,
+	const torch::Tensor& gaussian_mask)
 {
   if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
     AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -110,6 +111,18 @@ RasterizeGaussiansCUDA(
 		  tile_mask_ptr = tile_mask.contiguous().data_ptr<uint8_t>();
 	  }
 
+	  const uint8_t* gaussian_mask_ptr = nullptr;
+	  if (gaussian_mask.numel() > 0)
+	  {
+		  if (!gaussian_mask.is_cuda())
+			  AT_ERROR("gaussian_mask must be a CUDA tensor");
+		  if (gaussian_mask.dim() != 1 || gaussian_mask.size(0) != P)
+			  AT_ERROR("gaussian_mask must have shape (P,)");
+		  if (gaussian_mask.scalar_type() != at::kByte && gaussian_mask.scalar_type() != at::kBool)
+			  AT_ERROR("gaussian_mask must have dtype uint8 or bool");
+		  gaussian_mask_ptr = gaussian_mask.contiguous().data_ptr<uint8_t>();
+	  }
+
 	  rendered = CudaRasterizer::Rasterizer::forward(
 	    geomFunc,
 		binningFunc,
@@ -132,6 +145,7 @@ RasterizeGaussiansCUDA(
 		tan_fovy,
 		prefiltered,
 		tile_mask_ptr,
+		gaussian_mask_ptr,
 		out_color.contiguous().data<float>(),
 		out_invdepthptr,
 		antialiasing,

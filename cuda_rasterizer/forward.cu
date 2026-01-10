@@ -174,6 +174,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float4* conic_opacity,
 	const dim3 grid,
 	uint32_t* tiles_touched,
+	const uint8_t* gaussian_mask,
 	bool prefiltered,
 	bool antialiasing)
 {
@@ -185,6 +186,9 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	// this Gaussian will not be processed further.
 	radii[idx] = 0;
 	tiles_touched[idx] = 0;
+
+	if (gaussian_mask && gaussian_mask[idx] == 0)
+		return;
 
 	// Perform near culling, quit if outside.
 	float3 p_view;
@@ -567,6 +571,7 @@ void FORWARD::preprocess(int P, int D, int M,
 	float4* conic_opacity,
 	const dim3 grid,
 	uint32_t* tiles_touched,
+	const uint8_t* gaussian_mask,
 	bool prefiltered,
 	bool antialiasing)
 {
@@ -595,6 +600,7 @@ void FORWARD::preprocess(int P, int D, int M,
 		conic_opacity,
 		grid,
 		tiles_touched,
+		gaussian_mask,
 		prefiltered,
 		antialiasing
 		);

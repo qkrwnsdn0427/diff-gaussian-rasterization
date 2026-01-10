@@ -216,6 +216,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float tan_fovx, float tan_fovy,
 	const bool prefiltered,
 	const uint8_t* tile_mask,
+	const uint8_t* gaussian_mask,
 	float* out_color,
 	float* depth,
 	bool antialiasing,
@@ -272,6 +273,7 @@ int CudaRasterizer::Rasterizer::forward(
 		geomState.conic_opacity,
 		tile_grid,
 		geomState.tiles_touched,
+		gaussian_mask,
 		prefiltered,
 		antialiasing
 	), debug)
