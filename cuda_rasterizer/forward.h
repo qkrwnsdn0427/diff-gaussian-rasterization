@@ -45,10 +45,14 @@ namespace FORWARD
 		float* colors,
 		float4* conic_opacity,
 		const dim3 grid,
-		uint32_t* tiles_touched,
-		const uint8_t* gaussian_mask,
-		bool prefiltered,
-		bool antialiasing);
+	uint32_t* tiles_touched,
+	const uint8_t* gaussian_mask,
+	const uint8_t* gaussian_mask_tile,
+	int* tile_mask,
+	const int tile_mask_mode,
+	const int tile_mask_pad,
+	bool prefiltered,
+	bool antialiasing);
 
 	// Main rasterization method.
 	void render(
@@ -65,7 +69,7 @@ namespace FORWARD
 		float* out_color,
 		float* depths,
 		float* depth,
-		const uint8_t* tile_mask);
+		const int* tile_mask);
 
 	void computeTileMask(
 		int P,

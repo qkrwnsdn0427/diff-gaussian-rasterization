@@ -215,8 +215,12 @@ int CudaRasterizer::Rasterizer::forward(
 	const float* cam_pos,
 	const float tan_fovx, float tan_fovy,
 	const bool prefiltered,
-	const uint8_t* tile_mask,
+	const int* tile_mask,
 	const uint8_t* gaussian_mask,
+	const uint8_t* gaussian_mask_tile,
+	const int tile_mask_mode,
+	const int tile_mask_pad,
+	const bool tile_mask_build,
 	float* out_color,
 	float* depth,
 	bool antialiasing,
@@ -237,6 +241,10 @@ int CudaRasterizer::Rasterizer::forward(
 
 	dim3 tile_grid((width + BLOCK_X - 1) / BLOCK_X, (height + BLOCK_Y - 1) / BLOCK_Y, 1);
 	dim3 block(BLOCK_X, BLOCK_Y, 1);
+	if (tile_mask_build && tile_mask != nullptr)
+	{
+		CHECK_CUDA(cudaMemset((void*)tile_mask, 0, tile_grid.x * tile_grid.y * sizeof(int)), debug)
+	}
 
 	// Dynamically resize image-based auxiliary buffers during training
 	size_t img_chunk_size = required<ImageState>(width * height);
@@ -274,6 +282,10 @@ int CudaRasterizer::Rasterizer::forward(
 		tile_grid,
 		geomState.tiles_touched,
 		gaussian_mask,
+		gaussian_mask_tile,
+		tile_mask_build ? const_cast<int*>(tile_mask) : nullptr,
+		tile_mask_mode,
+		tile_mask_pad,
 		prefiltered,
 		antialiasing
 	), debug)
@@ -362,7 +374,7 @@ void CudaRasterizer::Rasterizer::backward(
 	const float* projmatrix,
 	const float* campos,
 	const float tan_fovx, float tan_fovy,
-	const uint8_t* tile_mask,
+	const int* tile_mask,
 	const uint8_t* gaussian_mask,
 	const int* radii,
 	char* geom_buffer,

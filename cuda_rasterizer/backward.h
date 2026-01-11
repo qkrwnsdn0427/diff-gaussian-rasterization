@@ -40,7 +40,7 @@ namespace BACKWARD
 		float* dL_dopacity,
 		float* dL_dcolors,
 		float* dL_dinvdepths,
-		const uint8_t* tile_mask);
+		const int* tile_mask);
 
 	void preprocess(
 		int P, int D, int M,

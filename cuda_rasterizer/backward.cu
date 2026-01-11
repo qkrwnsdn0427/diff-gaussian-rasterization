@@ -472,7 +472,7 @@ renderCUDA(
 	float* __restrict__ dL_dopacity,
 	float* __restrict__ dL_dcolors,
 	float* __restrict__ dL_dinvdepths,
-	const uint8_t* __restrict__ tile_mask
+	const int* __restrict__ tile_mask
 )
 {
 	// We rasterize again. Compute necessary block info.
@@ -744,7 +744,7 @@ void BACKWARD::render(
 	float* dL_dopacity,
 	float* dL_dcolors,
 	float* dL_dinvdepths,
-	const uint8_t* tile_mask)
+	const int* tile_mask)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
 		ranges,

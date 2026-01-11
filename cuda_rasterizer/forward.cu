@@ -175,6 +175,10 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	const dim3 grid,
 	uint32_t* tiles_touched,
 	const uint8_t* gaussian_mask,
+	const uint8_t* gaussian_mask_tile,
+	int* tile_mask,
+	const int tile_mask_mode,
+	const int tile_mask_pad,
 	bool prefiltered,
 	bool antialiasing)
 {
@@ -248,6 +252,42 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
 	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
 		return;
+
+	if (tile_mask != nullptr && (gaussian_mask_tile == nullptr || gaussian_mask_tile[idx] != 0))
+	{
+		if (tile_mask_mode == 1)
+		{
+			int tile_x = (int)floorf(point_image.x / BLOCK_X);
+			int tile_y = (int)floorf(point_image.y / BLOCK_Y);
+			int min_x = max(0, tile_x - tile_mask_pad);
+			int max_x = min((int)grid.x, tile_x + tile_mask_pad + 1);
+			int min_y = max(0, tile_y - tile_mask_pad);
+			int max_y = min((int)grid.y, tile_y + tile_mask_pad + 1);
+
+			for (int y = min_y; y < max_y; ++y)
+			{
+				for (int x = min_x; x < max_x; ++x)
+				{
+					atomicExch(tile_mask + y * grid.x + x, 1);
+				}
+			}
+		}
+		else
+		{
+			int min_x = max(0, (int)rect_min.x - tile_mask_pad);
+			int max_x = min((int)grid.x, (int)rect_max.x + tile_mask_pad);
+			int min_y = max(0, (int)rect_min.y - tile_mask_pad);
+			int max_y = min((int)grid.y, (int)rect_max.y + tile_mask_pad);
+
+			for (int y = min_y; y < max_y; ++y)
+			{
+				for (int x = min_x; x < max_x; ++x)
+				{
+					atomicExch(tile_mask + y * grid.x + x, 1);
+				}
+			}
+		}
+	}
 
 	// If colors have been precomputed, use them, otherwise convert
 	// spherical harmonics coefficients to RGB color.
@@ -386,7 +426,7 @@ renderCUDA(
 	float* __restrict__ out_color,
 	const float* __restrict__ depths,
 	float* __restrict__ invdepth,
-	const uint8_t* __restrict__ tile_mask)
+	const int* __restrict__ tile_mask)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -529,7 +569,7 @@ void FORWARD::render(
 	float* out_color,
 	float* depths,
 	float* depth,
-	const uint8_t* tile_mask)
+	const int* tile_mask)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -572,6 +612,10 @@ void FORWARD::preprocess(int P, int D, int M,
 	const dim3 grid,
 	uint32_t* tiles_touched,
 	const uint8_t* gaussian_mask,
+	const uint8_t* gaussian_mask_tile,
+	int* tile_mask,
+	const int tile_mask_mode,
+	const int tile_mask_pad,
 	bool prefiltered,
 	bool antialiasing)
 {
@@ -601,6 +645,10 @@ void FORWARD::preprocess(int P, int D, int M,
 		grid,
 		tiles_touched,
 		gaussian_mask,
+		gaussian_mask_tile,
+		tile_mask,
+		tile_mask_mode,
+		tile_mask_pad,
 		prefiltered,
 		antialiasing
 		);

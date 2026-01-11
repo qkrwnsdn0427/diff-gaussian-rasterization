@@ -123,7 +123,11 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.antialiasing,
             raster_settings.debug,
             raster_settings.tile_mask,
-            raster_settings.gaussian_mask,
+            raster_settings.gaussian_mask_forward,
+            raster_settings.gaussian_mask_tile,
+            int(raster_settings.tile_mask_mode),
+            int(raster_settings.tile_mask_pad),
+            bool(raster_settings.tile_mask_build),
         )
 
         # Invoke C++/CUDA rasterizer
@@ -204,6 +208,11 @@ class GaussianRasterizationSettings(NamedTuple):
     antialiasing : bool
     tile_mask : torch.Tensor
     gaussian_mask : torch.Tensor
+    gaussian_mask_forward : torch.Tensor
+    gaussian_mask_tile : torch.Tensor
+    tile_mask_mode : int
+    tile_mask_pad : int
+    tile_mask_build : bool
 
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):

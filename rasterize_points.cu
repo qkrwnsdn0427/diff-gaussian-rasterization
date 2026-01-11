@@ -57,7 +57,11 @@ RasterizeGaussiansCUDA(
 	const bool antialiasing,
 	const bool debug,
 	const torch::Tensor& tile_mask,
-	const torch::Tensor& gaussian_mask)
+	const torch::Tensor& gaussian_mask,
+	const torch::Tensor& gaussian_mask_tile,
+	const int tile_mask_mode,
+	const int tile_mask_pad,
+	const bool tile_mask_build)
 {
   if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
     AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -99,19 +103,20 @@ RasterizeGaussiansCUDA(
 		M = sh.size(1);
       }
 
-	  const uint8_t* tile_mask_ptr = nullptr;
+	  const int* tile_mask_ptr = nullptr;
 	  if (tile_mask.numel() > 0)
 	  {
 		  if (!tile_mask.is_cuda())
 			  AT_ERROR("tile_mask must be a CUDA tensor");
 		  if (tile_mask.dim() != 2 || tile_mask.size(0) != tile_h || tile_mask.size(1) != tile_w)
 			  AT_ERROR("tile_mask must have shape (ceil(H/BLOCK_Y), ceil(W/BLOCK_X))");
-		  if (tile_mask.scalar_type() != at::kByte && tile_mask.scalar_type() != at::kBool)
-			  AT_ERROR("tile_mask must have dtype uint8 or bool");
-		  tile_mask_ptr = tile_mask.contiguous().data_ptr<uint8_t>();
+		  if (tile_mask.scalar_type() != at::kInt)
+			  AT_ERROR("tile_mask must have dtype int32");
+		  tile_mask_ptr = tile_mask.contiguous().data_ptr<int>();
 	  }
 
 	  const uint8_t* gaussian_mask_ptr = nullptr;
+	  const uint8_t* gaussian_mask_tile_ptr = nullptr;
 	  if (gaussian_mask.numel() > 0)
 	  {
 		  if (!gaussian_mask.is_cuda())
@@ -121,6 +126,17 @@ RasterizeGaussiansCUDA(
 		  if (gaussian_mask.scalar_type() != at::kByte && gaussian_mask.scalar_type() != at::kBool)
 			  AT_ERROR("gaussian_mask must have dtype uint8 or bool");
 		  gaussian_mask_ptr = gaussian_mask.contiguous().data_ptr<uint8_t>();
+	  }
+
+	  if (gaussian_mask_tile.numel() > 0)
+	  {
+		  if (!gaussian_mask_tile.is_cuda())
+			  AT_ERROR("gaussian_mask_tile must be a CUDA tensor");
+		  if (gaussian_mask_tile.dim() != 1 || gaussian_mask_tile.size(0) != P)
+			  AT_ERROR("gaussian_mask_tile must have shape (P,)");
+		  if (gaussian_mask_tile.scalar_type() != at::kByte && gaussian_mask_tile.scalar_type() != at::kBool)
+			  AT_ERROR("gaussian_mask_tile must have dtype uint8 or bool");
+		  gaussian_mask_tile_ptr = gaussian_mask_tile.contiguous().data_ptr<uint8_t>();
 	  }
 
 	  rendered = CudaRasterizer::Rasterizer::forward(
@@ -146,6 +162,10 @@ RasterizeGaussiansCUDA(
 		prefiltered,
 		tile_mask_ptr,
 		gaussian_mask_ptr,
+		gaussian_mask_tile_ptr,
+		tile_mask_mode,
+		tile_mask_pad,
+		tile_mask_build,
 		out_color.contiguous().data<float>(),
 		out_invdepthptr,
 		antialiasing,
@@ -219,7 +239,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 
   if(P != 0)
   {  
-	  const uint8_t* tile_mask_ptr = nullptr;
+	  const int* tile_mask_ptr = nullptr;
 	  const uint8_t* gaussian_mask_ptr = nullptr;
 	  if (tile_mask.numel() > 0)
 	  {
@@ -227,9 +247,9 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 			  AT_ERROR("tile_mask must be a CUDA tensor");
 		  if (tile_mask.dim() != 2 || tile_mask.size(0) != tile_h || tile_mask.size(1) != tile_w)
 			  AT_ERROR("tile_mask must have shape (ceil(H/BLOCK_Y), ceil(W/BLOCK_X))");
-		  if (tile_mask.scalar_type() != at::kByte && tile_mask.scalar_type() != at::kBool)
-			  AT_ERROR("tile_mask must have dtype uint8 or bool");
-		  tile_mask_ptr = tile_mask.contiguous().data_ptr<uint8_t>();
+		  if (tile_mask.scalar_type() != at::kInt)
+			  AT_ERROR("tile_mask must have dtype int32");
+		  tile_mask_ptr = tile_mask.contiguous().data_ptr<int>();
 	  }
 
 	  if (gaussian_mask.numel() > 0)
