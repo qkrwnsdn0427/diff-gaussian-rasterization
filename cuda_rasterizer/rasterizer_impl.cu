@@ -75,7 +75,9 @@ __global__ void duplicateWithKeys(
 	uint64_t* gaussian_keys_unsorted,
 	uint32_t* gaussian_values_unsorted,
 	int* radii,
-	dim3 grid)
+	dim3 grid,
+	const int* tile_mask,
+	bool tile_mask_cull)
 {
 	auto idx = cg::this_grid().thread_rank();
 	if (idx >= P)
@@ -99,6 +101,8 @@ __global__ void duplicateWithKeys(
 		{
 			for (int x = rect_min.x; x < rect_max.x; x++)
 			{
+				if (tile_mask_cull && tile_mask && tile_mask[y * grid.x + x] == 0)
+					continue;
 				uint64_t key = y * grid.x + x;
 				key <<= 32;
 				key |= *((uint32_t*)&depths[idx]);
@@ -108,6 +112,42 @@ __global__ void duplicateWithKeys(
 			}
 		}
 	}
+}
+
+__global__ void countTilesTouchedMasked(
+	int P,
+	const float2* points_xy,
+	int* radii,
+	const int* tile_mask,
+	dim3 grid,
+	uint32_t* tiles_touched)
+{
+	auto idx = cg::this_grid().thread_rank();
+	if (idx >= P)
+		return;
+
+	if (radii[idx] <= 0)
+	{
+		tiles_touched[idx] = 0;
+		return;
+	}
+
+	uint2 rect_min, rect_max;
+	getRect(points_xy[idx], radii[idx], rect_min, rect_max, grid);
+
+	uint32_t touched = 0;
+	for (int y = rect_min.y; y < rect_max.y; y++)
+	{
+		for (int x = rect_min.x; x < rect_max.x; x++)
+		{
+			if (tile_mask[y * grid.x + x] != 0)
+				touched++;
+		}
+	}
+
+	if (touched == 0)
+		radii[idx] = 0;
+	tiles_touched[idx] = touched;
 }
 
 // Check keys to see if it is at the start/end of one tile's range in 
@@ -221,6 +261,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const int tile_mask_mode,
 	const int tile_mask_pad,
 	const bool tile_mask_build,
+	const bool tile_mask_cull,
 	float* out_color,
 	float* depth,
 	bool antialiasing,
@@ -256,6 +297,9 @@ int CudaRasterizer::Rasterizer::forward(
 		throw std::runtime_error("For non-RGB, provide precomputed Gaussian colors!");
 	}
 
+	const bool tile_mask_cull_enabled = tile_mask_cull && tile_mask != nullptr;
+	const bool preprocess_tile_mask_cull = tile_mask_cull_enabled && !tile_mask_build;
+
 	// Run preprocessing per-Gaussian (transformation, bounding, conversion of SHs to RGB)
 	CHECK_CUDA(FORWARD::preprocess(
 		P, D, M,
@@ -286,9 +330,22 @@ int CudaRasterizer::Rasterizer::forward(
 		tile_mask_build ? const_cast<int*>(tile_mask) : nullptr,
 		tile_mask_mode,
 		tile_mask_pad,
+		preprocess_tile_mask_cull,
 		prefiltered,
 		antialiasing
 	), debug)
+
+	if (tile_mask_cull_enabled && tile_mask_build)
+	{
+		countTilesTouchedMasked << <(P + 255) / 256, 256 >> > (
+			P,
+			geomState.means2D,
+			radii,
+			tile_mask,
+			tile_grid,
+			geomState.tiles_touched);
+		CHECK_CUDA(, debug)
+	}
 
 	// Compute prefix sum over full list of touched tile counts by Gaussians
 	// E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
@@ -312,7 +369,9 @@ int CudaRasterizer::Rasterizer::forward(
 		binningState.point_list_keys_unsorted,
 		binningState.point_list_unsorted,
 		radii,
-		tile_grid)
+		tile_grid,
+		tile_mask,
+		tile_mask_cull_enabled)
 	CHECK_CUDA(, debug)
 
 	int bit = getHigherMsb(tile_grid.x * tile_grid.y);

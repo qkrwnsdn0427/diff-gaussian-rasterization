@@ -16,5 +16,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("rasterize_gaussians", &RasterizeGaussiansCUDA);
   m.def("rasterize_gaussians_backward", &RasterizeGaussiansBackwardCUDA);
   m.def("compute_tile_mask", &ComputeTileMaskCUDA);
+  m.def("compute_gaussian_mask_from_tiles", &ComputeGaussianMaskFromTilesCUDA);
   m.def("mark_visible", &markVisible);
 }

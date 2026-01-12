@@ -55,6 +55,7 @@ namespace CudaRasterizer
 			const int tile_mask_mode,
 			const int tile_mask_pad,
 			const bool tile_mask_build,
+			const bool tile_mask_cull,
 			float* out_color,
 			float* depth,
 			bool antialiasing,

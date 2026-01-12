@@ -42,7 +42,8 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& gaussian_mask_tile,
 	const int tile_mask_mode,
 	const int tile_mask_pad,
-	const bool tile_mask_build);
+	const bool tile_mask_build,
+	const bool tile_mask_cull);
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
  RasterizeGaussiansBackwardCUDA(
@@ -84,6 +85,23 @@ torch::Tensor ComputeTileMaskCUDA(
 	const int image_height,
 	const int image_width,
 	const float scale_modifier,
+	const torch::Tensor& gaussian_mask,
+	const int tile_size,
+	const int pad_tiles,
+	const int mode);
+
+torch::Tensor ComputeGaussianMaskFromTilesCUDA(
+	const torch::Tensor& means3D,
+	const torch::Tensor& scales,
+	const torch::Tensor& rotations,
+	const torch::Tensor& viewmatrix,
+	const torch::Tensor& projmatrix,
+	const float tan_fovx,
+	const float tan_fovy,
+	const int image_height,
+	const int image_width,
+	const float scale_modifier,
+	const torch::Tensor& tile_mask,
 	const torch::Tensor& gaussian_mask,
 	const int tile_size,
 	const int pad_tiles,

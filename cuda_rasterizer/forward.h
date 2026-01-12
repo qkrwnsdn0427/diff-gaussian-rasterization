@@ -51,6 +51,7 @@ namespace FORWARD
 	int* tile_mask,
 	const int tile_mask_mode,
 	const int tile_mask_pad,
+	bool tile_mask_cull,
 	bool prefiltered,
 	bool antialiasing);
 
@@ -85,6 +86,22 @@ namespace FORWARD
 		const int pad_tiles,
 		const int mode,
 		int* tile_mask);
+
+	void computeGaussianMaskFromTiles(
+		int P,
+		const float* means3D,
+		const glm::vec3* scales,
+		const float scale_modifier,
+		const glm::vec4* rotations,
+		const float* viewmatrix,
+		const float* projmatrix,
+		const float tan_fovx, float tan_fovy,
+		const int W, const int H,
+		const int* tile_mask,
+		const uint8_t* gaussian_mask,
+		const int pad_tiles,
+		const int mode,
+		uint8_t* out_mask);
 }
 
 

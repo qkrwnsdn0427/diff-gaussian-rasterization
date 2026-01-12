@@ -85,6 +85,53 @@ def compute_tile_mask(
         int(mode),
     )
 
+def compute_gaussian_mask_from_tiles(
+    means3D,
+    scales,
+    rotations,
+    viewmatrix,
+    projmatrix,
+    tanfovx,
+    tanfovy,
+    image_height,
+    image_width,
+    tile_mask,
+    scale_modifier=1.0,
+    gaussian_mask=None,
+    tile_size=16,
+    pad_tiles=0,
+    mode="footprint",
+):
+    if gaussian_mask is None:
+        gaussian_mask = torch.empty((0,), device=means3D.device, dtype=torch.uint8)
+    else:
+        gaussian_mask = gaussian_mask.to(device=means3D.device, dtype=torch.uint8)
+    tile_mask = tile_mask.to(device=means3D.device, dtype=torch.int32)
+    if isinstance(mode, str):
+        if mode == "footprint":
+            mode = 0
+        elif mode == "center":
+            mode = 1
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+    return _C.compute_gaussian_mask_from_tiles(
+        means3D,
+        scales,
+        rotations,
+        viewmatrix,
+        projmatrix,
+        float(tanfovx),
+        float(tanfovy),
+        int(image_height),
+        int(image_width),
+        float(scale_modifier),
+        tile_mask,
+        gaussian_mask,
+        int(tile_size),
+        int(pad_tiles),
+        int(mode),
+    )
+
 class _RasterizeGaussians(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -128,6 +175,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             int(raster_settings.tile_mask_mode),
             int(raster_settings.tile_mask_pad),
             bool(raster_settings.tile_mask_build),
+            bool(raster_settings.tile_mask_cull),
         )
 
         # Invoke C++/CUDA rasterizer
@@ -213,6 +261,7 @@ class GaussianRasterizationSettings(NamedTuple):
     tile_mask_mode : int
     tile_mask_pad : int
     tile_mask_build : bool
+    tile_mask_cull : bool
 
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):
